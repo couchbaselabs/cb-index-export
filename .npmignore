@@ -1,0 +1,8 @@
+assets/
+**/*.js.map
+app/
+.git*
+examples
+test
+.eslint*
+Makefile
