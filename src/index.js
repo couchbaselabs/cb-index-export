@@ -73,7 +73,7 @@ export function getIndexStats ({
   for (const index_node of index_nodes_list) {
     // call the stats api for each node
     results.push(
-      request(`http://${index_node.replace(/.+/, 'localhost')}:9102/stats`, {
+      request(`http://${index_node}:9102/stats`, {
         json: true,
         auth: {
           username,
@@ -105,7 +105,7 @@ export function getIndexDefinitions ({
   for (const index_node of index_nodes_list) {
     // call the stats api for each node
     results.push(
-      request(`http://${index_node.replace(/.+/, 'localhost')}:9102/getIndexStatement`, {
+      request(`http://${index_node}:9102/getIndexStatement`, {
         json: true,
         auth: {
           username,
