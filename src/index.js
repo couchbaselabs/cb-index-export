@@ -2,19 +2,45 @@ import path from 'path'
 import fs from 'fs-extra'
 import request from 'request-promise-native'
 import json2csv from 'json2csv'
+import debugLogger from 'debug'
 
+// create a debugger for each method
+const debuggers = {}
 
+// simple debug logging function per method
+export function debug (method, message, ...args) {
+  if (!debuggers[method]) {
+    debuggers[method] = debugLogger(method)
+  }
+  debuggers[method](message, ...args)
+}
 
 export async function getIndexNodes ({
-  base_url,
   cluster,
-  port,
+  username,
+  password,
   timeout,
 }) {
-  const url = `${base_url}${cluster}:${port}/pools/default`
+  debug('getIndexNodes', 'Arguments:')
+  debug('getIndexNodes', `  cluster: ${cluster}`)
+  debug('getIndexNodes', `  username: ${username}`)
+  debug('getIndexNodes', `  password: ${'●'.repeat(password.length)}`)
+  debug('getIndexNodes', `  timeout: ${timeout}`)
+  debug('getIndexNodes', 'Body:')
+  // add the protocol if it isn't there already
+  cluster = !cluster.match(/^https?:\/\/$/) ? `http://${cluster.replace(/^[A-Za-z]+:\/\//, '')}` : cluster
+  // add the port if it isn't there
+  cluster = !cluster.match(/:[0-9]+$/) ? `${cluster}:8091` : cluster
+  debug('getIndexNodes', `  cluster: ${cluster}`)
+  const url = `${cluster}/pools/default`
+  debug('getIndexNodes', `  url: ${url}`)
   // get all of the nodes in the cluster
   const { nodes } = await request(url, {
     json: true,
+    auth: {
+      username,
+      password,
+    },
     headers: {
       'Content-Type': 'application/json',
     },
@@ -22,12 +48,14 @@ export async function getIndexNodes ({
   })
   // loop over each of the nodes, returning only host name for the nodes that have
   // the index service running
-  return nodes.reduce((previous, current) => {
+  const index_nodes = nodes.reduce((previous, current) => {
     if (current.services.includes('index')) {
       previous.push(current.hostname.replace(/:[0-9]+$/, ''))
     }
     return previous
   }, [])
+  debug('getIndexNodes', '  index_nodes: %O', index_nodes)
+  return index_nodes
 }
 
 
@@ -68,9 +96,16 @@ export function getIndexStats ({
   password,
   timeout,
 }) {
+  debug('getIndexStats', 'Arguments:')
+  debug('getIndexStats', '  index_nodes_list: %O', index_nodes_list)
+  debug('getIndexStats', `  username: ${username}`)
+  debug('getIndexStats', `  password: ${'●'.repeat(password.length)}`)
+  debug('getIndexStats', `  timeout: ${timeout}`)
+  debug('getIndexStats', 'Body:')
   const results = []
   // loop over each node and get the stats
   for (const index_node of index_nodes_list) {
+    debug('getIndexStats', `  index_node: ${index_node}`)
     // call the stats api for each node
     results.push(
       request(`http://${index_node}:9102/stats`, {
@@ -100,9 +135,16 @@ export function getIndexDefinitions ({
   password,
   timeout,
 }) {
+  debug('getIndexDefinitions', 'Arguments:')
+  debug('getIndexDefinitions', '  index_nodes_list: %O', index_nodes_list)
+  debug('getIndexDefinitions', `  username: ${username}`)
+  debug('getIndexDefinitions', `  password: ${'●'.repeat(password.length)}`)
+  debug('getIndexDefinitions', `  timeout: ${timeout}`)
+  debug('getIndexDefinitions', 'Body:')
   const results = []
   // loop over each node and get the stats
   for (const index_node of index_nodes_list) {
+    debug('getIndexDefinitions', `  index_node: ${index_node}`)
     // call the stats api for each node
     results.push(
       request(`http://${index_node}:9102/getIndexStatement`, {
@@ -140,21 +182,29 @@ export function getIndexDefinitions ({
 }
 
 export default async function cbIndexExport ({
-  cluster,
-  secure,
-  port,
-  username,
-  password,
-  output,
-  overwrite,
-  timeout,
-  delimiter,
+  cluster = 'localhost',
+  indexNodes: index_nodes,
+  username = 'Administrator',
+  password = 'password',
+  output = 'export.csv',
+  overwrite = false,
+  timeout = 10000,
+  delimiter = ',',
 }) {
-  const base_url = `${secure ? 'https' : 'http'}://${username}:${password}@`
-  const index_nodes_list = await getIndexNodes({
-    base_url,
+  debug('cbIndexExport', 'Arguments:')
+  debug('cbIndexExport', `  cluster: ${cluster}`)
+  debug('cbIndexExport', `  index_nodes: ${index_nodes}`)
+  debug('cbIndexExport', `  username: ${cluster}`)
+  debug('cbIndexExport', `  password: ${'●'.repeat(password.length)}`)
+  debug('cbIndexExport', `  output: ${output}`)
+  debug('cbIndexExport', `  overwrite: ${overwrite}`)
+  debug('cbIndexExport', `  timeout: ${timeout}`)
+  debug('cbIndexExport', `  delimiter: ${delimiter}`)
+  // use the passed index node list or retrieve them
+  const index_nodes_list = index_nodes ? index_nodes.split(',') : await getIndexNodes({
     cluster,
-    port,
+    username,
+    password,
     timeout,
   })
   const index_stats = await getIndexStats({
@@ -187,6 +237,13 @@ export default async function cbIndexExport ({
       }
     }
   }
+
+  // output the results to the console if it is specified
+  if (output === 'console') {
+    console.log(JSON.stringify(results, null, 2)) // eslint-disable-line no-console
+    return
+  }
+
   // output the results to csv file
   const json2csvParser = new json2csv.Parser({
     fields: Object.keys(results[0]),

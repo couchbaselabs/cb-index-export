@@ -18,15 +18,8 @@ commander
     'localhost',
   )
   .option(
-    '-s, --secure <b>',
-    'Whether or not to use http(s)',
-    false,
-  )
-  .option(
-    '-p, --port <n>',
-    'The query port to use',
-    8091,
-    (val) => parseInt(val, 10),
+    '-i, --index-nodes <s>',
+    'A comma-delimited list of index node hostnames.  If not specified they will be retrieved from the cluster map',
   )
   .option(
     '-u, --username <s>',
@@ -40,7 +33,7 @@ commander
   )
   .option(
     '-o, --output <s>',
-    'The destination output file',
+    'The string "console" or a destination to output the file',
     `${process.cwd()}/results.csv`,
   )
   .option(
@@ -49,10 +42,15 @@ commander
     false,
   )
   .option(
+    '-d, --delimiter <s>',
+    'The delimiter to use',
+    ',',
+  )
+  .option(
     '-t, --timeout <n>',
     'Timeout in milliseconds for the operation',
     (val) => parseInt(val, 10),
-    10000,
+    2000,
   )
   .option(
     '-d, --delimiter <s>',
