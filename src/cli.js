@@ -52,11 +52,6 @@ commander
     (val) => parseInt(val, 10),
     2000,
   )
-  .option(
-    '-d, --delimiter <s>',
-    'The delimiter to use',
-    ',',
-  )
   .parse(process.argv)
 
 export default async function () {
