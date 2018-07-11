@@ -30,7 +30,7 @@ nvm install 9
 1\. Clone the Repo
 
 ```bash
-https://github.com/couchbaselabs/cb-index-export.git
+git clone https://github.com/couchbaselabs/cb-index-export.git
 ```
 
 2\. Move to the repo directory
