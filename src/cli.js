@@ -37,6 +37,10 @@ commander
     `${process.cwd()}/results.csv`,
   )
   .option(
+    '-b, --buckets <s>',
+    'A comma-delimited list of buckets to limit results for',
+  )
+  .option(
     '-x, --overwrite <b>',
     'Overwrite the destination file if it exists already',
     false,

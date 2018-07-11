@@ -157,7 +157,10 @@ export function getIndexDefinitions ({
           'Content-Type': 'application/json',
         },
         timeout,
-      }),
+      })
+        .catch(() => {
+          return [] // 4.x and older does not have this endpoint
+        }),
     )
   }
   return Promise.all(results)
@@ -181,22 +184,58 @@ export function getIndexDefinitions ({
     })
 }
 
+export function buildIndexOutput ({
+  stats,
+  definitions,
+  buckets,
+}) {
+  debug('buildIndexOutput', 'Arguments:')
+  debug('buildIndexOutput', '  stats: N/A')
+  debug('buildIndexOutput', '  definitions: N/A')
+  debug('buildIndexOutput', `  buckets: ${buckets}`)
+  // convert the buckets to an array
+  buckets = buckets ? buckets.split(',') : Object.keys(stats)
+  // build the output from the index_stats and definitions
+  const results = []
+  // loop over each bucket
+  for (const bucket of Object.keys(stats)) {
+    if (buckets.includes(bucket)) {
+      // loop over each index
+      for (const index_name of Object.keys(stats[bucket])) {
+        // loop over each node
+        for (const index_node of Object.keys(stats[bucket][index_name].nodes)) {
+          results.push(Object.assign(
+            { bucket },
+            { index_name },
+            { definition: (definitions[bucket] && definitions[bucket][index_name]) || 'N/A' },
+            { index_node },
+            stats[bucket][index_name].nodes[index_node],
+          ))
+        }
+      }
+    }
+  }
+  return results
+}
+
 export default async function cbIndexExport ({
   cluster = 'localhost',
   indexNodes: index_nodes,
   username = 'Administrator',
   password = 'password',
   output = 'export.csv',
+  buckets = null,
   overwrite = false,
   timeout = 10000,
   delimiter = ',',
 }) {
   debug('cbIndexExport', 'Arguments:')
   debug('cbIndexExport', `  cluster: ${cluster}`)
-  debug('cbIndexExport', `  index_nodes: ${index_nodes}`)
+  debug('cbIndexExport', `  index_nodes: ${index_nodes || ''}`)
   debug('cbIndexExport', `  username: ${cluster}`)
   debug('cbIndexExport', `  password: ${'●'.repeat(password.length)}`)
   debug('cbIndexExport', `  output: ${output}`)
+  debug('cbIndexExport', `  buckets: ${buckets || ''}`)
   debug('cbIndexExport', `  overwrite: ${overwrite}`)
   debug('cbIndexExport', `  timeout: ${timeout}`)
   debug('cbIndexExport', `  delimiter: ${delimiter}`)
@@ -207,7 +246,7 @@ export default async function cbIndexExport ({
     password,
     timeout,
   })
-  const index_stats = await getIndexStats({
+  const stats = await getIndexStats({
     index_nodes_list,
     username,
     password,
@@ -219,24 +258,7 @@ export default async function cbIndexExport ({
     password,
     timeout,
   })
-  // build the output from the index_stats and definitions
-  const results = []
-  // loop over each bucket
-  for (const bucket of Object.keys(index_stats)) {
-    // loop over each index
-    for (const index_name of Object.keys(index_stats[bucket])) {
-      // loop over each node
-      for (const index_node of Object.keys(index_stats[bucket][index_name].nodes)) {
-        results.push(Object.assign(
-          { bucket },
-          { index_name },
-          { definition: definitions[bucket][index_name] || 'N/A' },
-          { index_node },
-          index_stats[bucket][index_name].nodes[index_node],
-        ))
-      }
-    }
-  }
+  const results = buildIndexOutput({ stats, definitions, buckets })
 
   // output the results to the console if it is specified
   if (output === 'console') {
