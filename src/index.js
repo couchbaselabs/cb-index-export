@@ -26,13 +26,7 @@ export async function getIndexNodes ({
   debug('getIndexNodes', `  username: ${username}`)
   debug('getIndexNodes', `  password: ${'●'.repeat(password.length)}`)
   debug('getIndexNodes', `  timeout: ${timeout}`)
-  debug('getIndexNodes', 'Body:')
-  // add the protocol if it isn't there already
-  cluster = !cluster.match(/^https?:\/\/$/) ? `http://${cluster.replace(/^[A-Za-z]+:\/\//, '')}` : cluster
-  // add the port if it isn't there
-  cluster = !cluster.match(/:[0-9]+$/) ? `${cluster}:8091` : cluster
-  debug('getIndexNodes', `  cluster: ${cluster}`)
-  const url = `${cluster}/pools/default`
+  const url = `${cluster}/pools/nodes`
   debug('getIndexNodes', `  url: ${url}`)
   // get all of the nodes in the cluster
   const { nodes } = await request(url, {
@@ -50,7 +44,7 @@ export async function getIndexNodes ({
   // the index service running
   const index_nodes = nodes.reduce((previous, current) => {
     if (current.services.includes('index')) {
-      previous.push(current.hostname.replace(/:[0-9]+$/, ''))
+      previous.push(current.hostname)
     }
     return previous
   }, [])
@@ -58,160 +52,172 @@ export async function getIndexNodes ({
   return index_nodes
 }
 
-
-export function parseIndexStats (results) {
-  const stats = {}
-  // loop over each of the nodes results
-  for (const index_node of results) {
-    // loop over each of the index nodes properties
-    for (const item of Object.keys(index_node)) {
-      const parts = item.split(':')
-      if (parts.length === 3) { // if there are 3 parts save the result
-        const [ bucket, index_name, stat_name ] = parts
-        // define the bucket if it does not exist
-        if (!stats[bucket]) {
-          stats[bucket] = {}
-        }
-        // define the index if it does not exist
-        if (!stats[bucket][index_name]) {
-          stats[bucket][index_name] = {
-            nodes: {},
-          }
-        }
-        // define the index_node if it does not exist
-        if (!stats[bucket][index_name].nodes[index_node.hostname]) {
-          stats[bucket][index_name].nodes[index_node.hostname] = {}
-        }
-        // add the stat
-        stats[bucket][index_name].nodes[index_node.hostname][stat_name] = index_node[item]
-      }
-    }
-  }
-  return stats
-}
-
-export function getIndexStats ({
-  index_nodes_list,
-  username,
-  password,
-  timeout,
-}) {
-  debug('getIndexStats', 'Arguments:')
-  debug('getIndexStats', '  index_nodes_list: %O', index_nodes_list)
-  debug('getIndexStats', `  username: ${username}`)
-  debug('getIndexStats', `  password: ${'●'.repeat(password.length)}`)
-  debug('getIndexStats', `  timeout: ${timeout}`)
-  debug('getIndexStats', 'Body:')
-  const results = []
-  // loop over each node and get the stats
-  for (const index_node of index_nodes_list) {
-    debug('getIndexStats', `  index_node: ${index_node}`)
-    // call the stats api for each node
-    results.push(
-      request(`http://${index_node}:9102/stats`, {
-        json: true,
-        auth: {
-          username,
-          password,
-        },
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        timeout,
-      })
-        .then((res) => {
-          res.hostname = index_node // add the hostname to the result
-          return res
-        }),
-    )
-  }
-  return Promise.all(results)
-    .then(parseIndexStats)
-}
-
-export function getIndexDefinitions ({
-  index_nodes_list,
+export async function getIndexDefinitions ({
+  cluster,
   username,
   password,
   timeout,
 }) {
   debug('getIndexDefinitions', 'Arguments:')
-  debug('getIndexDefinitions', '  index_nodes_list: %O', index_nodes_list)
+  debug('getIndexDefinitions', `  cluster: ${cluster}`)
   debug('getIndexDefinitions', `  username: ${username}`)
   debug('getIndexDefinitions', `  password: ${'●'.repeat(password.length)}`)
   debug('getIndexDefinitions', `  timeout: ${timeout}`)
-  debug('getIndexDefinitions', 'Body:')
+  const url = `${cluster}/indexStatus`
+  debug('getIndexDefinitions', `  url: ${url}`)
+  // get all of the nodes in the cluster
+  const { indexes } = await request(url, {
+    json: true,
+    auth: {
+      username,
+      password,
+    },
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    timeout,
+  })
+  return indexes.reduce((previous, {
+    storageMode: storage_mode,
+    hosts: nodes,
+    definition,
+    bucket,
+    index: index_name,
+  }) => {
+    // does the bucket name exist?
+    if (!previous[bucket]) {
+      previous[bucket] = {}
+    }
+    // set the index information
+    previous[bucket][index_name] = {
+      bucket,
+      storage_mode,
+      nodes,
+      definition,
+      index_name,
+    }
+    return previous
+  }, {})
+}
+
+export function getIndexStats ({
+  cluster,
+  username,
+  password,
+  buckets,
+  index_nodes,
+  timeout,
+}) {
+  debug('getIndexStats', 'Arguments:')
+  debug('getIndexStats', `  cluster: ${cluster}`)
+  debug('getIndexStats', `  username: ${username}`)
+  debug('getIndexStats', `  password: ${'●'.repeat(password.length)}`)
+  debug('getIndexStats', '  buckets: %O', buckets)
+  debug('getIndexStats', '  index_nodes: %O', index_nodes)
+  debug('getIndexStats', `  timeout: ${timeout}`)
+  debug('getIndexStats', 'Body:')
   const results = []
-  // loop over each node and get the stats
-  for (const index_node of index_nodes_list) {
-    debug('getIndexDefinitions', `  index_node: ${index_node}`)
-    // call the stats api for each node
-    results.push(
-      request(`http://${index_node}:9102/getIndexStatement`, {
-        json: true,
-        auth: {
-          username,
-          password,
-        },
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        timeout,
-      })
-        .catch(() => {
-          return [] // 4.x and older does not have this endpoint
-        }),
-    )
+  // loop over each bucket
+  for (const bucket of buckets) {
+    debug('getIndexStats', `  bucket: ${bucket}`)
+    // loop over each node and get the stats
+    for (let index_node of index_nodes) {
+      // remove the protocol
+      index_node = index_node.replace(/^https?:\/\/$/, '')
+      // add the port if it isn't there
+      index_node = !index_node.match(/:[0-9]+$/) ? `${index_node}:8091` : index_node
+      debug('getIndexStats', `  index_node: ${index_node}`)
+      // call the stats api for each node
+      results.push(
+        request(`${cluster}/pools/default/buckets/@index-${bucket}/nodes/${index_node}/stats`, {
+          json: true,
+          auth: {
+            username,
+            password,
+          },
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          timeout,
+        })
+          .then(({ op: { samples } = {} }) => { // eslint-disable-line no-loop-func
+            const node_stats = {
+              bucket,
+              index_node,
+              indexes: {},
+            }
+            for (const stat of Object.keys(samples)) {
+              // if there is a stat_name avg it
+              const [ , index_name, stat_name ] = stat.split('/')
+              if (stat_name) {
+                // create the index name if it doesn't exist already
+                if (!node_stats.indexes[index_name]) {
+                  node_stats.indexes[index_name] = {}
+                }
+                // save the stat by averaging all of the samples
+                node_stats.indexes[index_name][stat_name] = samples[stat].reduce(
+                  (previous, current) => {
+                    return previous + current
+                  },
+                  0,
+                ) / samples[stat].length
+              }
+            }
+            return node_stats
+          }),
+      )
+    }
   }
   return Promise.all(results)
-    .then((defs) => {
-      return defs
-        .reduce((previous, current) => { // combine each nodes definitions to a single result
-          return previous.concat(current)
-        }, [])
-        .reduce((previous, current) => { // parse the results into something usable
-          let [ index_name, bucket ] = current.split(' ON ')
-          index_name = index_name.replace(/^[^`]+`|`.*$/g, '')
-          bucket = bucket.replace(/^\s*`|`.+$/g, '')
-          // create the bucket if it isn't defined
-          if (!previous[bucket]) {
-            previous[bucket] = {}
+    .then((node_results) => {
+      const stats = {}
+      // loop over each of the results
+      for (const node_stats of node_results) {
+        // create the bucket if it doesn't exist
+        if (!stats[node_stats.bucket]) {
+          stats[node_stats.bucket] = {}
+        }
+        // loop over each of the indexes
+        for (const index of Object.keys(node_stats.indexes)) {
+          // create the index name if it does not exist
+          if (!stats[node_stats.bucket][index]) {
+            stats[node_stats.bucket][index] = {}
           }
-          // assign the definition
-          previous[bucket][index_name] = current
-          return previous
-        }, {})
+          // add the node stats
+          stats[node_stats.bucket][index][node_stats.index_node] = node_stats.indexes[index]
+        }
+      }
+      return stats
     })
 }
 
 export function buildIndexOutput ({
-  stats,
-  definitions,
   buckets,
+  index_nodes,
+  stats,
+  indexes,
 }) {
   debug('buildIndexOutput', 'Arguments:')
+  debug('buildIndexOutput', '  buckets: %O', buckets)
+  debug('buildIndexOutput', '  index_nodes: %O', index_nodes)
   debug('buildIndexOutput', '  stats: N/A')
-  debug('buildIndexOutput', '  definitions: N/A')
-  debug('buildIndexOutput', `  buckets: ${buckets}`)
-  // convert the buckets to an array
-  buckets = buckets ? buckets.split(',') : Object.keys(stats)
+  debug('buildIndexOutput', '  indexes: N/A')
   // build the output from the index_stats and definitions
   const results = []
   // loop over each bucket
-  for (const bucket of Object.keys(stats)) {
-    if (buckets.includes(bucket)) {
-      // loop over each index
-      for (const index_name of Object.keys(stats[bucket])) {
-        // loop over each node
-        for (const index_node of Object.keys(stats[bucket][index_name].nodes)) {
-          results.push(Object.assign(
-            { bucket },
-            { index_name },
-            { definition: (definitions[bucket] && definitions[bucket][index_name]) || 'N/A' },
-            { index_node },
-            stats[bucket][index_name].nodes[index_node],
-          ))
-        }
+  for (const bucket of buckets) {
+    // loop over each index in the bucket
+    for (const index_name of Object.keys(indexes[bucket])) {
+      // loop over each index nodes node
+      for (const index_node of index_nodes) {
+        results.push(Object.assign(
+          { bucket },
+          { index_name },
+          { storage_mode: indexes[bucket][index_name].storage_mode },
+          { index_node },
+          { definition: indexes[bucket][index_name].definition },
+          stats[bucket][index_name][index_node],
+        ))
       }
     }
   }
@@ -226,7 +232,7 @@ export default async function cbIndexExport ({
   output = 'export.csv',
   buckets = null,
   overwrite = false,
-  timeout = 10000,
+  timeout = 2000,
   delimiter = ',',
 }) {
   debug('cbIndexExport', 'Arguments:')
@@ -239,26 +245,45 @@ export default async function cbIndexExport ({
   debug('cbIndexExport', `  overwrite: ${overwrite}`)
   debug('cbIndexExport', `  timeout: ${timeout}`)
   debug('cbIndexExport', `  delimiter: ${delimiter}`)
+  debug('cbIndexExport', 'Body:')
+  // add the protocol if it isn't there already
+  cluster = !cluster.match(/^https?:\/\/$/) ? `http://${cluster.replace(/^[A-Za-z]+:\/\//, '')}` : cluster
+  // add the port if it isn't there
+  cluster = !cluster.match(/:[0-9]+$/) ? `${cluster}:8091` : cluster
+  debug('cbIndexExport', `  cluster: ${cluster}`)
+  // get the index definitions
+  const indexes = await getIndexDefinitions({
+    cluster,
+    username,
+    password,
+    index_nodes,
+    timeout,
+  })
   // use the passed index node list or retrieve them
-  const index_nodes_list = index_nodes ? index_nodes.split(',') : await getIndexNodes({
+  index_nodes = index_nodes ? index_nodes.split(',') : await getIndexNodes({
     cluster,
     username,
     password,
     timeout,
   })
+  // use the passed buckets or get them from the indexes
+  buckets = buckets ? buckets.split(',') : Object.keys(indexes)
+  // get the index stats
   const stats = await getIndexStats({
-    index_nodes_list,
+    cluster,
     username,
     password,
+    buckets,
+    index_nodes,
     timeout,
   })
-  const definitions = await getIndexDefinitions({
-    index_nodes_list,
-    username,
-    password,
-    timeout,
+  // build the output
+  const results = buildIndexOutput({
+    buckets,
+    index_nodes,
+    stats,
+    indexes,
   })
-  const results = buildIndexOutput({ stats, definitions, buckets })
 
   // output the results to the console if it is specified
   if (output === 'console') {
