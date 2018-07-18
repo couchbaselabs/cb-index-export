@@ -196,12 +196,18 @@ export function buildIndexOutput ({
   index_nodes,
   stats,
   indexes,
+  include = '*',
+  exclude = '',
 }) {
   debug('buildIndexOutput', 'Arguments:')
   debug('buildIndexOutput', '  buckets: %O', buckets)
   debug('buildIndexOutput', '  index_nodes: %O', index_nodes)
   debug('buildIndexOutput', '  stats: N/A')
   debug('buildIndexOutput', '  indexes: N/A')
+  debug('buildIndexOutput', `  include: ${include}`)
+  debug('buildIndexOutput', `  exclude: ${exclude}`)
+  include = (include || '*').split(',')
+  exclude = (exclude || '').split(',')
   // build the output from the index_stats and definitions
   const results = []
   // loop over each bucket
@@ -210,14 +216,22 @@ export function buildIndexOutput ({
     for (const index_name of Object.keys(indexes[bucket])) {
       // loop over each index nodes node
       for (const index_node of index_nodes) {
-        results.push(Object.assign(
-          { bucket },
-          { index_name },
-          { storage_mode: indexes[bucket][index_name].storage_mode },
-          { index_node },
-          { definition: indexes[bucket][index_name].definition },
-          stats[bucket][index_name][index_node],
-        ))
+        results.push(
+          Object.entries(Object.assign(
+            { bucket },
+            { index_name },
+            { storage_mode: indexes[bucket][index_name].storage_mode },
+            { index_node },
+            { definition: indexes[bucket][index_name].definition },
+            stats[bucket][index_name][index_node],
+          ))
+            .reduce((previous, current) => { // eslint-disable-line no-loop-func
+              if ((include[0] === '*' || include.includes(current[0])) && !exclude.includes(current[0])) {
+                previous[current[0]] = current[1] // eslint-disable-line prefer-destructuring
+              }
+              return previous
+            }, {}),
+        )
       }
     }
   }
@@ -231,6 +245,8 @@ export default async function cbIndexExport ({
   password = 'password',
   output = 'export.csv',
   buckets = null,
+  include = '*',
+  exclude = null,
   overwrite = false,
   timeout = 2000,
   delimiter = ',',
@@ -242,6 +258,8 @@ export default async function cbIndexExport ({
   debug('cbIndexExport', `  password: ${'●'.repeat(password.length)}`)
   debug('cbIndexExport', `  output: ${output}`)
   debug('cbIndexExport', `  buckets: ${buckets || ''}`)
+  debug('cbIndexExport', `  include: ${include}`)
+  debug('cbIndexExport', `  exclude: ${exclude}`)
   debug('cbIndexExport', `  overwrite: ${overwrite}`)
   debug('cbIndexExport', `  timeout: ${timeout}`)
   debug('cbIndexExport', `  delimiter: ${delimiter}`)
@@ -283,6 +301,8 @@ export default async function cbIndexExport ({
     index_nodes,
     stats,
     indexes,
+    include,
+    exclude,
   })
 
   // output the results to the console if it is specified

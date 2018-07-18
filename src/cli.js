@@ -18,7 +18,7 @@ commander
     'localhost',
   )
   .option(
-    '-i, --index-nodes <s>',
+    '-in, --index-nodes <s>',
     'A comma-delimited list of index node hostnames.  If not specified they will be retrieved from the cluster map',
   )
   .option(
@@ -39,6 +39,14 @@ commander
   .option(
     '-b, --buckets <s>',
     'A comma-delimited list of buckets to limit results for',
+  )
+  .option(
+    '-i, --include <s>',
+    'Comma-delimited list of fields/stats to include in the output, if not specified all are included',
+  )
+  .option(
+    '-e, --exclude <s>',
+    'Comma-delimited list of fields/stats to execlue from the output',
   )
   .option(
     '-x, --overwrite <b>',
